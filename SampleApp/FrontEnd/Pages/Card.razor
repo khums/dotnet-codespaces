@@ -1,0 +1,25 @@
+<div class="card @(Card.IsFlipped ? "flipped" : "") @(Card.IsMatched ? "matched" : "")" @onclick="HandleClick">
+    <div class="card-inner">
+        <div class="card-front">
+        </div>
+        <div class="card-back">
+            @if (Card.IsFlipped)
+            {
+                @Card.Value
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public required PairMatchingGame.CardModel Card { get; set; }
+
+    [Parameter]
+    public EventCallback<PairMatchingGame.CardModel> OnCardClicked { get; set; }
+
+    private async Task HandleClick()
+    {
+        await OnCardClicked.InvokeAsync(Card);
+    }
+}

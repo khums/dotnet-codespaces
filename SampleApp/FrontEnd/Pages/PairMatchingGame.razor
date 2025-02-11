@@ -1,0 +1,104 @@
+@page "/"
+
+<PageTitle>Pair Matching Game</PageTitle>
+
+<div class="game-container">
+    <h1>Pair Matching Game</h1>
+
+    @if (ShowWinMessage)
+    {
+        <div class="win-message">Congratulations! You won in @MoveCount moves!</div>
+    }
+
+    <div class="moves">Moves: @MoveCount</div>
+
+    <div class="board">
+        @foreach (var card in Cards)
+        {
+            <Card Card="card" OnCardClicked="HandleCardClick" />
+        }
+    </div>
+
+    <button class="restart-button" @onclick="RestartGame">Restart Game</button>
+</div>
+
+@code {
+    private List<CardModel> Cards { get; set; } = new List<CardModel>();
+    private CardModel? _firstCardSelected;
+    private int MoveCount { get; set; } = 0;
+    private bool _preventClicking = false;
+    private bool ShowWinMessage { get; set; } = false;
+
+    protected override void OnInitialized()
+    {
+        InitializeGame();
+    }
+
+    private void InitializeGame()
+    {
+        MoveCount = 0;
+        ShowWinMessage = false;
+        _firstCardSelected = null;
+        _preventClicking = false;
+
+        List<string> cardValues = new List<string>() { "A", "B", "C", "D", "E", "F", "G", "H" }; // Ensure even number for pairs
+        cardValues.AddRange(cardValues); // Duplicate to create pairs
+        cardValues = cardValues.OrderBy(x => Guid.NewGuid()).ToList(); // Shuffle
+
+        Cards = cardValues.Select(x => new CardModel { Value = x, IsFlipped = false, IsMatched = false }).ToList();
+    }
+
+    private async Task HandleCardClick(CardModel card)
+    {
+        if (_preventClicking || card.IsFlipped || card.IsMatched)
+        {
+            return; // Prevent clicking already flipped or matched cards, or while waiting
+        }
+
+        card.IsFlipped = true;
+
+        if (_firstCardSelected == null)
+        {
+            _firstCardSelected = card;
+        }
+        else
+        {
+            MoveCount++;
+            if (_firstCardSelected.Value == card.Value)
+            {
+                _firstCardSelected.IsMatched = true;
+                card.IsMatched = true;
+                _firstCardSelected = null;
+
+                if (Cards.All(c => c.IsMatched))
+                {
+                    ShowWinMessage = true;
+                }
+            }
+            else
+            {
+                _preventClicking = true; // Prevent clicking more cards while waiting
+                StateHasChanged(); // Update UI immediately to show the flipped cards
+                await Task.Delay(1000); // Wait before flipping back
+
+                _firstCardSelected.IsFlipped = false;
+                card.IsFlipped = false;
+                _firstCardSelected = null;
+                _preventClicking = false;
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void RestartGame()
+    {
+        InitializeGame();
+    }
+
+    public class CardModel
+    {
+        public string Value { get; set; } = "";
+        public bool IsFlipped { get; set; } = false;
+        public bool IsMatched { get; set; } = false;
+    }
+}
