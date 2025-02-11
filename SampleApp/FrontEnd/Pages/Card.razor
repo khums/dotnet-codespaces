@@ -1,0 +1,25 @@
+<div class="card @(CardData.IsFlipped ? "flipped" : "") @(CardData.IsMatched ? "matched" : "")" @onclick="OnCardClickedHandler">
+    <div class="card-inner">
+        <div class="card-front">
+            </div>
+        <div class="card-back">
+            @CardData.Value
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public PairMatchingGame.CardData CardData { get; set; }
+
+    [Parameter]
+    public EventCallback<PairMatchingGame.CardData> OnCardClicked { get; set; }
+
+    private async Task OnCardClickedHandler()
+    {
+        if (OnCardClicked.HasDelegate)
+        {
+            await OnCardClicked.InvokeAsync(CardData);
+        }
+    }
+}

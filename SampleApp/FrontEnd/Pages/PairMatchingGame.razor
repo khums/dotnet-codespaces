@@ -1,0 +1,122 @@
+@page "/memorygame"
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Memory Game</PageTitle>
+
+<div class="game-container">
+    <h1>Memory Game</h1>
+
+    @if (cards is not null)
+    {
+        <div class="grid">
+            @foreach (var card in cards)
+            {
+                <Card CardData="card" OnCardClicked="HandleCardClick" />
+            }
+        </div>
+    }
+
+    <p>Moves: @moveCount</p>
+
+    @if (gameOver)
+    {
+        <div class="win-message">
+            <p>Congratulations! You won in @moveCount moves.</p>
+            <button class="restart-button" @onclick="RestartGame">Restart</button>
+        </div>
+    }
+    else
+    {
+        <button class="restart-button" @onclick="RestartGame">Restart</button>
+    }
+</div>
+
+
+@code {
+    public List<CardData> cards;
+    public CardData selectedCard1;
+    public CardData selectedCard2;
+    public int moveCount = 0;
+    public bool gameOver = false;
+    public bool preventClick = false; // prevent clicking more than 2 cards
+
+    protected override void OnInitialized() => InitializeGame();
+
+    private void InitializeGame()
+    {
+        var cardValues = new List<int> { 1, 2, 3, 4, 5, 6, 7, 8 }; // Pairs of 8
+        var duplicatedCardValues = cardValues.Concat(cardValues).ToList(); // Create pairs
+        var random = new Random();
+        cards = duplicatedCardValues.OrderBy(_ => random.Next()).Select(value => new CardData { Value = value, IsFlipped = false, IsMatched = false }).ToList();
+        selectedCard1 = null;
+        selectedCard2 = null;
+        moveCount = 0;
+        gameOver = false;
+        preventClick = false;
+    }
+
+    public async Task HandleCardClick(CardData clickedCard)
+    {
+        if (preventClick || clickedCard.IsFlipped || clickedCard.IsMatched)
+        {
+            return; // Ignore clicks on already flipped or matched cards
+        }
+
+        if (selectedCard1 == null)
+        {
+            selectedCard1 = clickedCard;
+            selectedCard1.IsFlipped = true;
+        }
+        else if (selectedCard2 == null && selectedCard1 != clickedCard)
+        {
+            preventClick = true;
+            selectedCard2 = clickedCard;
+            selectedCard2.IsFlipped = true;
+            moveCount++;
+
+            if (selectedCard1.Value == selectedCard2.Value)
+            {
+                // Match found
+                selectedCard1.IsMatched = true;
+                selectedCard2.IsMatched = true;
+                selectedCard1 = null;
+                selectedCard2 = null;
+                preventClick = false;
+                CheckForGameOver();
+            }
+            else
+            {
+                // No match, flip back after a delay
+                await Task.Delay(1000);
+                selectedCard1.IsFlipped = false;
+                selectedCard2.IsFlipped = false;
+                selectedCard1 = null;
+                selectedCard2 = null;
+                preventClick = false;
+            }
+            
+            await InvokeAsync(StateHasChanged); // ✅ Ensure UI updates on Blazor thread
+        }
+    }
+
+    public void CheckForGameOver()
+    {
+        if (cards.All(card => card.IsMatched))
+        {
+            gameOver = true;
+        }
+    }
+
+    public void RestartGame()
+    {
+        InitializeGame();
+    }
+
+
+    public class CardData
+    {
+        public int Value { get; set; }
+        public bool IsFlipped { get; set; }
+        public bool IsMatched { get; set; }
+    }
+}
