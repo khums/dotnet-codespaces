@@ -1,0 +1,124 @@
+@page "/pairmatchinggame"
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Pair Matching Game</PageTitle>
+
+<h1>Pair Matching Game</h1>
+
+@if (gameWon)
+{
+    <div class="win-message">
+        Congratulations! You won in @moves moves!
+    </div>
+}
+
+<div class="game-board">
+    @foreach (var card in cards)
+    {
+        <Card Key="@card.Index" Card="card" OnCardClicked="HandleCardClick" />
+    }
+</div>
+
+<div class="controls">
+    <p>Moves: @moves</p>
+    <button class="btn btn-primary" @onclick="RestartGame">Restart</button>
+</div>
+
+@code {
+    private List<Card> cards = new List<Card>();
+    private int firstCardFlippedIndex = -1;
+    private int secondCardFlippedIndex = -1;
+    private int moves = 0;
+    private int matchesFound = 0;
+    private bool gameWon = false;
+    private bool isProcessing = false;
+    private int gridSize = 4; //Can be changed to alter grid size. Must be even for pairs to exist.
+
+    protected override void OnInitialized()
+    {
+        InitializeGame();
+    }
+
+    private void InitializeGame()
+    {
+        cards.Clear();
+        firstCardFlippedIndex = -1;
+        secondCardFlippedIndex = -1;
+        moves = 0;
+        matchesFound = 0;
+        gameWon = false;
+        isProcessing = false;
+
+        // Create pairs of cards
+        List<int> cardValues = new List<int>();
+        for (int i = 0; i < (gridSize * gridSize) / 2; i++)
+        {
+            cardValues.Add(i + 1);
+            cardValues.Add(i + 1);
+        }
+
+        // Shuffle the card values
+        Random random = new Random();
+        cardValues = cardValues.OrderBy(x => random.Next()).ToList();
+
+        //Assign shuffled values to card objects
+        for (int i = 0; i < gridSize * gridSize; i++)
+        {
+            cards.Add(new Card { Index = i, Value = cardValues[i], IsFlipped = false, IsMatched = false });
+        }
+    }
+
+    private async Task HandleCardClick(Card clickedCard)
+    {
+        if (isProcessing || clickedCard.IsFlipped || clickedCard.IsMatched)
+        {
+            return;
+        }
+
+        int index = clickedCard.Index;
+
+        if (firstCardFlippedIndex == -1)
+        {
+            firstCardFlippedIndex = index;
+            cards[index].IsFlipped = true;
+        }
+        else if (secondCardFlippedIndex == -1 && index != firstCardFlippedIndex)
+        {
+            secondCardFlippedIndex = index;
+            cards[index].IsFlipped = true;
+            moves++;
+            isProcessing = true;
+
+            await Task.Delay(1000); //Delay to show the cards
+
+            if (cards[firstCardFlippedIndex].Value == cards[secondCardFlippedIndex].Value)
+            {
+                cards[firstCardFlippedIndex].IsMatched = true;
+                cards[secondCardFlippedIndex].IsMatched = true;
+                matchesFound++;
+            }
+            else
+            {
+                cards[firstCardFlippedIndex].IsFlipped = false;
+                cards[secondCardFlippedIndex].IsFlipped = false;
+            }
+
+            firstCardFlippedIndex = -1;
+            secondCardFlippedIndex = -1;
+            isProcessing = false;
+
+            if (matchesFound == (gridSize * gridSize) / 2)
+            {
+                gameWon = true;
+            }
+        }
+
+        StateHasChanged(); //Force Blazor to re-render.  Important after state changes.
+    }
+
+
+    private void RestartGame()
+    {
+        InitializeGame();
+    }
+}

@@ -1,0 +1,27 @@
+<div class="card @(Card.IsFlipped || Card.IsMatched ? "flipped" : "")" @onclick="OnCardClickedHandler">
+    <div class="card-inner">
+        <div class="card-front">
+            </div>
+        <div class="card-back">
+            @Card.Value
+        </div>
+    </div>
+</div>
+
+
+@code {
+    [Parameter]
+    public Card Card { get; set; }
+
+    [Parameter]
+    public EventCallback<Card> OnCardClicked { get; set; }
+
+
+    private async Task OnCardClickedHandler()
+    {
+        if (OnCardClicked.HasDelegate)
+        {
+            await OnCardClicked.InvokeAsync(Card);
+        }
+    }
+}
