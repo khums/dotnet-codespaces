@@ -1,0 +1,250 @@
+@page "/montyhall"
+
+<h1>Monty Hall Game</h1>
+
+<p>Choose a door. After you choose, I'll reveal a goat behind one of the other doors. Then you can decide whether to stick with your original choice or switch to the other unopened door.</p>
+
+<div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
+    @foreach (var door in Doors)
+    {
+        <button @onclick="() => SelectDoor(door.Id)" disabled="@IsDoorSelected" style="font-size: 2em; padding: 10px; border: 1px solid #ccc; cursor: pointer;">
+            @if (door.IsRevealed && door.HasCar)
+            {
+                <span>🚗</span>
+            }
+            else if (door.IsRevealed && !door.HasCar)
+            {
+                <span>🐐</span>
+            }
+            else
+            {
+                <span>🚪</span>
+            }
+        </button>
+    }
+</div>
+
+@if (IsDoorSelected && !IsSwitchOrStickChosen)
+{
+    <p>Door @(SelectedDoorId + 1) selected. I've revealed a goat behind door @(RevealedGoatDoorId + 1).  Do you want to switch?</p>
+    <button @onclick="SwitchDoor" style="padding: 10px; margin-right: 10px;">Switch</button>
+    <button @onclick="StickWithDoor" style="padding: 10px;">Stick</button>
+}
+
+@if (IsSwitchOrStickChosen)
+{
+    <p>You chose @(DidSwitch ? "to switch" : "to stick").</p>
+    @if (PlayerWon)
+    {
+        <p style="color: green;">You win! The car was behind door @(WinningDoorId + 1).</p>
+    }
+    else
+    {
+        <p style="color: red;">You lose! The car was behind door @(WinningDoorId + 1).</p>
+    }
+}
+
+<button @onclick="RestartGame" style="padding: 10px; margin-top: 20px;">Restart</button>
+
+<div>
+    <h2>Statistics</h2>
+    <p>Wins (Stick): @WinsStick</p>
+    <p>Losses (Stick): @LossesStick</p>
+    <p>Wins (Switch): @WinsSwitch</p>
+    <p>Losses (Switch): @LossesSwitch</p>
+    <button @onclick="ResetStatistics" style="padding: 10px; margin-top: 10px;">Reset Statistics</button>
+</div>
+
+@code {
+    private List<Door> Doors { get; set; } = new List<Door>();
+    private int WinningDoorId { get; set; } = -1;
+    private int SelectedDoorId { get; set; } = -1;
+    private int RevealedGoatDoorId { get; set; } = -1;
+    private bool IsDoorSelected { get; set; } = false;
+    private bool IsSwitchOrStickChosen { get; set; } = false;
+    private bool PlayerWon { get; set; } = false;
+    private bool DidSwitch { get; set; } = false;
+
+    private int WinsStick { get; set; } = 0;
+    private int LossesStick { get; set; } = 0;
+    private int WinsSwitch { get; set; } = 0;
+    private int LossesSwitch { get; set; } = 0;
+
+    private Random random = new Random();
+
+    protected override void OnInitialized()
+    {
+        InitializeGame();
+    }
+
+    public void InitializeGame()
+    {
+        Doors = new List<Door>
+        {
+            new Door { Id = 0 },
+            new Door { Id = 1 },
+            new Door { Id = 2 }
+        };
+
+        WinningDoorId = random.Next(0, 3);
+
+        IsDoorSelected = false;
+        IsSwitchOrStickChosen = false;
+        PlayerWon = false;
+        DidSwitch = false;
+
+        foreach (var door in Doors)
+        {
+            door.IsRevealed = false;
+            door.HasCar = (door.Id == WinningDoorId);
+        }
+
+        SelectedDoorId = -1;
+        RevealedGoatDoorId = -1;
+    }
+
+    public void SelectDoor(int doorId)
+    {
+        if (doorId < 0 || doorId >= Doors.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(doorId), "Door ID is invalid.");
+        }
+
+        SelectedDoorId = doorId;
+        IsDoorSelected = true;
+
+        // Reveal a goat door
+        RevealGoatDoor();
+
+        StateHasChanged();
+    }
+
+    public void RevealGoatDoor()
+    {
+        List<int> availableGoatDoors = new List<int>();
+        for (int i = 0; i < Doors.Count; i++)
+        {
+            if (i != SelectedDoorId && i != WinningDoorId)
+            {
+                availableGoatDoors.Add(i);
+            }
+        }
+
+        if (availableGoatDoors.Count > 0)
+        {
+            RevealedGoatDoorId = availableGoatDoors[random.Next(0, availableGoatDoors.Count)];
+            Doors[RevealedGoatDoorId].IsRevealed = true;
+        }
+        else
+        {
+            // Handle the edge case where the player somehow selected the car door.
+            // In this case, we need to find any goat door to reveal.
+            for (int i = 0; i < Doors.Count; i++)
+            {
+                if (i != SelectedDoorId)
+                {
+                    RevealedGoatDoorId = i;
+                    Doors[RevealedGoatDoorId].IsRevealed = true;
+                    break;
+                }
+            }
+        }
+
+        if (RevealedGoatDoorId == -1)
+        {
+            throw new InvalidOperationException("Could not reveal a goat door.");
+        }
+    }
+
+    public void SwitchDoor()
+    {
+        if (!IsDoorSelected)
+        {
+            throw new InvalidOperationException("A door must be selected before switching.");
+        }
+
+        DidSwitch = true;
+        int newDoorId = -1;
+        for (int i = 0; i < Doors.Count; i++)
+        {
+            if (i != SelectedDoorId && i != RevealedGoatDoorId)
+            {
+                newDoorId = i;
+                break;
+            }
+        }
+
+        if (newDoorId == -1)
+        {
+            throw new InvalidOperationException("Could not determine the door to switch to.");
+        }
+
+        SelectedDoorId = newDoorId;
+        DetermineWinner();
+        IsSwitchOrStickChosen = true;
+        StateHasChanged();
+    }
+
+    public void StickWithDoor()
+    {
+        if (!IsDoorSelected)
+        {
+            throw new InvalidOperationException("A door must be selected before sticking.");
+        }
+
+        DidSwitch = false;
+        DetermineWinner();
+        IsSwitchOrStickChosen = true;
+        StateHasChanged();
+    }
+
+    public void DetermineWinner()
+    {
+        PlayerWon = (SelectedDoorId == WinningDoorId);
+
+        if (DidSwitch)
+        {
+            if (PlayerWon)
+            {
+                WinsSwitch++;
+            }
+            else
+            {
+                LossesSwitch++;
+            }
+        }
+        else
+        {
+            if (PlayerWon)
+            {
+                WinsStick++;
+            }
+            else
+            {
+                LossesStick++;
+            }
+        }
+    }
+
+    public void RestartGame()
+    {
+        InitializeGame();
+        StateHasChanged();
+    }
+
+    public void ResetStatistics()
+    {
+        WinsStick = 0;
+        LossesStick = 0;
+        WinsSwitch = 0;
+        LossesSwitch = 0;
+        StateHasChanged();
+    }
+
+    public class Door
+    {
+        public int Id { get; set; }
+        public bool HasCar { get; set; } = false;
+        public bool IsRevealed { get; set; } = false;
+    }
+}
