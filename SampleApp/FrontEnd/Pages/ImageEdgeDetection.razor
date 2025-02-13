@@ -1,0 +1,413 @@
+@page "/"
+
+<h1>Image Edge Detection</h1>
+
+<InputFile OnChange="OnInputFileChange" />
+
+@if (originalImage != null)
+{
+    <h3>Original Image</h3>
+    <img src="@originalImage" style="max-width:300px; max-height:300px;" />
+}
+
+@if (cannyImage != null)
+{
+    <h3>Canny Edge Detection</h3>
+    <img src="@cannyImage" style="max-width:300px; max-height:300px;" />
+}
+
+@if (sobelImage != null)
+{
+    <h3>Sobel Edge Detection</h3>
+    <img src="@sobelImage" style="max-width:300px; max-height:300px;" />
+}
+
+@if (laplacianImage != null)
+{
+    <h3>Laplacian Edge Detection</h3>
+    <img src="@laplacianImage" style="max-width:300px; max-height:300px;" />
+}
+
+
+@code {
+    private string? originalImage;
+    private string? cannyImage;
+    private string? sobelImage;
+    private string? laplacianImage;
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        var imageFile = e.File;
+        if (imageFile != null)
+        {
+            using var stream = imageFile.OpenReadStream(imageFile.Size);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            var imageBytes = memoryStream.ToArray();
+
+            originalImage = $"data:{imageFile.ContentType};base64,{Convert.ToBase64String(imageBytes)}";
+
+            // Process the image
+            cannyImage = await ProcessImage(imageBytes, "canny");
+            sobelImage = await ProcessImage(imageBytes, "sobel");
+            laplacianImage = await ProcessImage(imageBytes, "laplacian");
+            StateHasChanged();
+        }
+    }
+
+    public async Task<string?> ProcessImage(byte[] imageBytes, string algorithm)
+    {
+        try
+        {
+            using var image = Image.Load(imageBytes);
+            Image processedImage = null!;
+
+            switch (algorithm.ToLower())
+            {
+                case "canny":
+                    processedImage = CannyEdgeDetection(image);
+                    break;
+                case "sobel":
+                    processedImage = SobelEdgeDetection(image);
+                    break;
+                case "laplacian":
+                    processedImage = LaplacianEdgeDetection(image);
+                    break;
+                default:
+                    Console.WriteLine("Unsupported algorithm.");
+                    return null;
+            }
+
+            using var ms = new MemoryStream();
+            await processedImage.SaveAsPngAsync(ms);
+            var processedBytes = ms.ToArray();
+            return $"data:image/png;base64,{Convert.ToBase64String(processedBytes)}";
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error processing image: {ex.Message}");
+            return null;
+        }
+    }
+
+    public Image CannyEdgeDetection(Image image)
+    {
+        //Basic grayscale conversion (simplified)
+        var grayscaleImage = new Image<L8, byte>(image.Width, image.Height);
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                var pixel = image[x, y];
+                byte gray = (byte)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                grayscaleImage[x, y] = new L8(gray);
+            }
+        }
+
+        // Gaussian Blur (very basic)
+        var blurredImage = GaussianBlur(grayscaleImage, 1.0);
+
+        // Sobel (Gradient Calculation)
+        var (gradX, gradY) = SobelGradients(blurredImage);
+
+        // Calculate Magnitude
+        var magnitude = new float[image.Width, image.Height];
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                magnitude[x, y] = (float)Math.Sqrt(gradX[x, y] * gradX[x, y] + gradY[x, y] * gradY[x, y]);
+            }
+        }
+
+        // Non-Maximum Suppression (simplified)
+        var suppressed = NonMaximumSuppression(magnitude, gradX, gradY);
+
+        // Double Thresholding and Hysteresis (very simplified)
+        return HysteresisThresholding(suppressed, 20, 60);
+    }
+
+    private Image GaussianBlur(Image<L8, byte> image, double sigma)
+    {
+        int kernelSize = (int)(3 * Math.Abs(sigma) + 1) * 2 + 1;
+        if (kernelSize % 2 == 0)
+            kernelSize++;
+
+        double[,] kernel = new double[kernelSize, kernelSize];
+        double kernelSum = 0;
+
+        int center = kernelSize / 2;
+        for (int x = 0; x < kernelSize; x++)
+        {
+            for (int y = 0; y < kernelSize; y++)
+            {
+                double exponent = -((x - center) * (x - center) + (y - center) * (y - center)) / (2 * sigma * sigma);
+                kernel[x, y] = Math.Exp(exponent) / (2 * Math.PI * sigma * sigma);
+                kernelSum += kernel[x, y];
+            }
+        }
+
+        // Normalize the kernel
+        for (int x = 0; x < kernelSize; x++)
+        {
+            for (int y = 0; y < kernelSize; y++)
+            {
+                kernel[x, y] /= kernelSum;
+            }
+        }
+
+        var blurredImage = new Image<L8, byte>(image.Width, image.Height);
+
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                double sum = 0;
+                for (int i = 0; i < kernelSize; i++)
+                {
+                    for (int j = 0; j < kernelSize; j++)
+                    {
+                        int imageX = x - center + i;
+                        int imageY = y - center + j;
+
+                        if (imageX >= 0 && imageX < image.Width && imageY >= 0 && imageY < image.Height)
+                        {
+                            sum += image[imageX, imageY].Red * kernel[i, j];
+                        }
+                    }
+                }
+                blurredImage[x, y] = new L8((byte)Math.Clamp(sum, 0, 255));
+            }
+        }
+
+        return blurredImage;
+    }
+
+    private (float[,] gradX, float[,] gradY) SobelGradients(Image<L8, byte> image)
+    {
+        float[,] gradX = new float[image.Width, image.Height];
+        float[,] gradY = new float[image.Width, image.Height];
+
+        int[,] sobelXKernel = { { -1, 0, 1 }, { -2, 0, 2 }, { -1, 0, 1 } };
+        int[,] sobelYKernel = { { -1, -2, -1 }, { 0, 0, 0 }, { 1, 2, 1 } };
+
+        for (int x = 1; x < image.Width - 1; x++)
+        {
+            for (int y = 1; y < image.Height - 1; y++)
+            {
+                float sumX = 0;
+                float sumY = 0;
+
+                for (int i = -1; i <= 1; i++)
+                {
+                    for (int j = -1; j <= 1; j++)
+                    {
+                        sumX += image[x + i, y + j].Red * sobelXKernel[i + 1, j + 1];
+                        sumY += image[x + i, y + j].Red * sobelYKernel[i + 1, j + 1];
+                    }
+                }
+
+                gradX[x, y] = sumX;
+                gradY[x, y] = sumY;
+            }
+        }
+
+        return (gradX, gradY);
+    }
+
+    private float[,] NonMaximumSuppression(float[,] magnitude, float[,] gradX, float[,] gradY)
+    {
+        int width = magnitude.GetLength(0);
+        int height = magnitude.GetLength(1);
+        float[,] suppressed = new float[width, height];
+
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                float gradientAngle = (float)Math.Atan2(gradY[x, y], gradX[x, y]);
+                float q = 255, r = 255;
+
+                // Check the angle to determine neighbors for comparison
+                if ((gradientAngle > -Math.PI / 8 && gradientAngle <= Math.PI / 8) || (gradientAngle > 7 * Math.PI / 8 || gradientAngle <= -7 * Math.PI / 8))
+                {
+                    q = magnitude[x, y + 1];
+                    r = magnitude[x, y - 1];
+                }
+                else if ((gradientAngle > Math.PI / 8 && gradientAngle <= 3 * Math.PI / 8) || (gradientAngle > -7 * Math.PI / 8 && gradientAngle <= -5 * Math.PI / 8))
+                {
+                    q = magnitude[x + 1, y - 1];
+                    r = magnitude[x - 1, y + 1];
+                }
+                else if ((gradientAngle > 3 * Math.PI / 8 && gradientAngle <= 5 * Math.PI / 8) || (gradientAngle > -5 * Math.PI / 8 && gradientAngle <= -3 * Math.PI / 8))
+                {
+                    q = magnitude[x + 1, y];
+                    r = magnitude[x - 1, y];
+                }
+                else if ((gradientAngle > 5 * Math.PI / 8 && gradientAngle <= 7 * Math.PI / 8) || (gradientAngle > -3 * Math.PI / 8 && gradientAngle <= -Math.PI / 8))
+                {
+                    q = magnitude[x - 1, y - 1];
+                    r = magnitude[x + 1, y + 1];
+                }
+
+                if (magnitude[x, y] >= q && magnitude[x, y] >= r)
+                {
+                    suppressed[x, y] = magnitude[x, y];
+                }
+                else
+                {
+                    suppressed[x, y] = 0;
+                }
+            }
+        }
+
+        return suppressed;
+    }
+
+    private Image HysteresisThresholding(float[,] suppressed, float lowThreshold, float highThreshold)
+    {
+        int width = suppressed.GetLength(0);
+        int height = suppressed.GetLength(1);
+        Image<L8, byte> result = new Image<L8, byte>(width, height);
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                if (suppressed[x, y] >= highThreshold)
+                {
+                    result[x, y] = new L8(255);
+                }
+                else if (suppressed[x, y] < lowThreshold)
+                {
+                    result[x, y] = new L8(0);
+                }
+                else
+                {
+                    result[x, y] = new L8(0); // Default to non-edge
+                }
+            }
+        }
+
+        // Hysteresis (very basic - just setting weak edges near strong edges to be strong)
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                if (result[x, y].Red == 0)
+                {
+                    for (int i = -1; i <= 1; i++)
+                    {
+                        for (int j = -1; j <= 1; j++)
+                        {
+                            if (result[x + i, y + j].Red == 255)
+                            {
+                                result[x, y] = new L8(255);
+                                break;
+                            }
+                        }
+                        if (result[x, y].Red == 255) break;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    public Image SobelEdgeDetection(Image image)
+    {
+        // Convert to grayscale
+        var grayscaleImage = new Image<L8, byte>(image.Width, image.Height);
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                var pixel = image[x, y];
+                byte gray = (byte)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                grayscaleImage[x, y] = new L8(gray);
+            }
+        }
+
+        // Apply Sobel filters
+        float[,] gradX = new float[image.Width, image.Height];
+        float[,] gradY = new float[image.Width, image.Height];
+
+        int[,] sobelXKernel = { { -1, 0, 1 }, { -2, 0, 2 }, { -1, 0, 1 } };
+        int[,] sobelYKernel = { { -1, -2, -1 }, { 0, 0, 0 }, { 1, 2, 1 } };
+
+        for (int x = 1; x < image.Width - 1; x++)
+        {
+            for (int y = 1; y < image.Height - 1; y++)
+            {
+                float sumX = 0;
+                float sumY = 0;
+
+                for (int i = -1; i <= 1; i++)
+                {
+                    for (int j = -1; j <= 1; j++)
+                    {
+                        sumX += grayscaleImage[x + i, y + j].Red * sobelXKernel[i + 1, j + 1];
+                        sumY += grayscaleImage[x + i, y + j].Red * sobelYKernel[i + 1, j + 1];
+                    }
+                }
+
+                gradX[x, y] = sumX;
+                gradY[x, y] = sumY;
+            }
+        }
+
+        // Calculate gradient magnitude
+        Image<L8, byte> result = new Image<L8, byte>(image.Width, image.Height);
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                float magnitude = (float)Math.Sqrt(gradX[x, y] * gradX[x, y] + gradY[x, y] * gradY[x, y]);
+                byte val = (byte)Math.Clamp(magnitude, 0, 255);
+                result[x, y] = new L8(val);
+            }
+        }
+
+        return result;
+    }
+
+    public Image LaplacianEdgeDetection(Image image)
+    {
+        // Convert to grayscale
+        var grayscaleImage = new Image<L8, byte>(image.Width, image.Height);
+        for (int x = 0; x < image.Width; x++)
+        {
+            for (int y = 0; y < image.Height; y++)
+            {
+                var pixel = image[x, y];
+                byte gray = (byte)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                grayscaleImage[x, y] = new L8(gray);
+            }
+        }
+
+        // Apply Laplacian filter
+        Image<L8, byte> result = new Image<L8, byte>(image.Width, image.Height);
+        int[,] laplacianKernel = { { 0, 1, 0 }, { 1, -4, 1 }, { 0, 1, 0 } };
+
+        for (int x = 1; x < image.Width - 1; x++)
+        {
+            for (int y = 1; y < image.Height - 1; y++)
+            {
+                int sum = 0;
+                for (int i = -1; i <= 1; i++)
+                {
+                    for (int j = -1; j <= 1; j++)
+                    {
+                        sum += grayscaleImage[x + i, y + j].Red * laplacianKernel[i + 1, j + 1];
+                    }
+                }
+
+                byte val = (byte)Math.Clamp(Math.Abs(sum), 0, 255); // Absolute value to highlight changes
+                result[x, y] = new L8(val);
+            }
+        }
+
+        return result;
+    }
+}
